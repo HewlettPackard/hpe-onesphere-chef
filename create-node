@@ -1,0 +1,118 @@
+#!/usr/bin/env /usr/bin/python3
+# (C) Copyright 2018 Hewlett Packard Enterprise Development LP.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
+
+# sample.py
+
+import json
+import argparse
+import configparser
+import logging
+#
+# ChangeMe
+#
+
+NAME='test-4'
+
+# for Python 2 (2.7.x and above), import the onesphere.osbinding2
+# for Python 3 (3.5.2 and above), import the onesphere.osbinding3
+import onesphere.osbinding3 as osb
+import chef
+
+
+def read_config(file):
+    config = configparser.ConfigParser()
+    config.read(file)
+    return config
+
+def field_from(result, field='uri'):
+    return result['members'][0][field]
+
+
+def get_public_key(file='public_key.pem'):
+    filein = open(file)
+    return filein.read()
+
+def get_api_uris(conn, config):
+    projectUri = field_from(conn.GetProjects(user_query=config['project_name']))
+    serviceUri = field_from(conn.GetServices(user_query=config['service_name']))
+    zoneUri = field_from(conn.GetServices(user_query=config['service_name']), field='zoneUri')
+    networkUri = field_from(conn.GetNetworks("zoneUri EQ "+ zoneUri + "AND projectUri EQ " + projectUri))
+    virtualMachineProfileUri = "/rest/virtual-machine-profiles/%s" % config['profile_id']
+    return {
+        'projectUri': projectUri,
+        'serviceUri': serviceUri,
+        'zoneUri': zoneUri,
+        'virtualMachineProfileUri': virtualMachineProfileUri,
+        'networks': [{"networkUri":networkUri}]
+    }
+
+def make_client(config):
+    return osb.OSClient(config['hostname'], config['username'], config['password'])
+
+def run():
+    #
+    # Command Line Arguments
+    #
+    parser = argparse.ArgumentParser(prog='create-node')
+    parser.add_argument('name', help='Name of node to create')
+    parser.add_argument('-v', '--verbose', help='increase output verbosity',
+                        action='store_true')
+    args = parser.parse_args()
+
+    #
+    # Logging
+    #
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
+    logging.getLogger('requests.packages.urllib3.connectionpool').setLevel(logging.ERROR )
+
+    #
+    # Configuration
+    #
+    config = read_config('onesphere.conf')
+
+
+    logging.info("Connecting to OneSphere instance: %s" % config['onesphere']['hostname'])
+    conn = make_client(config['onesphere'])
+
+    api_data = get_api_uris(conn, config['project'])
+    api_data['name'] = args.name
+    api_data['publicKey'] = get_public_key(config['project']['public_key_file'])
+
+    user_data = chef.get_user_data(config['user_data'])
+    api_data['userData'] = user_data
+
+    logging.info("Creating instance %s"%args.name)
+    logging.debug(api_data)
+    resp = conn.CreateDeployment(api_data)
+    if resp.status_code == 200 or resp.status_code == 201:
+        body = resp.json()
+        logging.info("Created instance '%s'. ID = %s"% (args.name, body['id']))
+    else:
+        logging.error("Error creating instance(%s): %s"%(resp.status_code, resp.json()['details']))
+
+    del conn
+
+if __name__ == '__main__':
+    run()
+

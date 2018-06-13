@@ -1,0 +1,5 @@
+*.pyc
+run*.py
+test/
+test.py
+

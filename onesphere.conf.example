@@ -1,0 +1,17 @@
+[onesphere]
+hostname=https://YOURSERVER.hpeonesphere.com
+username=you@example.com
+password=ThisIsVerySecretPassword
+
+[project]
+project_name=My Example Project
+service_name=CentOS7
+profile_id=3
+public_key_file=public_key.pem
+
+
+[user_data]
+chef_server_url=https://YOUR_AUTOMATE_SERVER/organizations/default
+validator_key_file=default-validator.pem
+run_list="recipe[chef-client]","recipe[opsworks-audit]", "recipe[hab_national_parks]"
+
